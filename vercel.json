@@ -6,7 +6,17 @@
       "use": "@vercel/static-build",
       "config": { "distDir": "dist" }
     },
-    { "src": "api/index.py", "use": "@vercel/python" }
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "backend/app/**/*.py",
+          "backend/seed.py",
+          "backend/requirements.txt"
+        ]
+      }
+    }
   ],
   "routes": [
     { "handle": "filesystem" },
