@@ -1,7 +1,5 @@
 import { Link } from 'react-router-dom'
 
-import { useAuth } from '../context/useAuth'
-
 function FeatureIcon({ path }: { path: string }) {
   return (
     <svg
@@ -68,8 +66,6 @@ const AUDIENCES = [
 ]
 
 export default function Landing() {
-  const { user } = useAuth()
-
   return (
     <div className="landing">
       <section className="hero">
@@ -85,18 +81,12 @@ export default function Landing() {
           whole route as a link or a QR code.
         </p>
         <div className="hero__actions">
-          <Link to={user ? '/dashboard' : '/register'} className="btn btn--lg">
-            {user ? 'Go to my routes' : 'Create your first route'}
+          <Link to="/dashboard" className="btn btn--lg">
+            Open the demo
           </Link>
-          {user ? (
-            <Link to="/landmarks" className="btn btn--ghost btn--lg">
-              Browse community landmarks
-            </Link>
-          ) : (
-            <Link to="/login" className="btn btn--ghost btn--lg">
-              I already have an account
-            </Link>
-          )}
+          <Link to="/landmarks" className="btn btn--ghost btn--lg">
+            Browse community landmarks
+          </Link>
         </div>
       </section>
 

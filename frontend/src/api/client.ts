@@ -82,25 +82,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 export const api = {
-  register: (name: string, email: string, password: string) =>
-    request<TokenResponse>('/auth/register', {
-      method: 'POST',
-      body: { name, email, password },
-      auth: false,
-    }),
-
-  login: (email: string, password: string) =>
-    request<TokenResponse>('/auth/login', {
-      method: 'POST',
-      body: { email, password },
-      auth: false,
-    }),
-
   me: () => request<User>('/auth/me'),
 
   /**
-   * Sign in as the shared demo account. 404s when the deployment has demo
-   * login turned off, which callers treat as "no demo here".
+   * The session every visitor gets. There is no sign-in form, so this runs
+   * automatically on boot and creates the demo content if it is missing.
    */
   demoLogin: () => request<TokenResponse>('/auth/demo', { method: 'POST', auth: false }),
 
