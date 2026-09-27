@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="14" fill="#1B3A6B"/>
+  <g stroke="#C8A45C" stroke-width="2.4" stroke-linecap="round">
+    <line x1="44" y1="20" x2="44" y2="14"/>
+    <line x1="35" y1="21.5" x2="32.5" y2="16.2"/>
+    <line x1="53" y1="21.5" x2="55.5" y2="16.2"/>
+  </g>
+  <text x="6" y="47" fill="#ffffff"
+        font-family="'Segoe Script','Brush Script MT',cursive"
+        font-size="34" font-style="italic" letter-spacing="-2">WP</text>
+</svg>
