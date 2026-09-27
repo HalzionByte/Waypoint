@@ -69,7 +69,11 @@ def test_demo_login_is_repeatable(client: TestClient, seed_demo: callable):
 
 
 def test_demo_login_can_be_switched_off(client: TestClient, seed_demo, monkeypatch):
-    """A real deployment must be able to close this door."""
+    """A real deployment must be able to close this door.
+
+    The demo endpoint self-seeds by default, so without the kill switch the
+    shared account could never be turned off.
+    """
     from app import config
     from app.routers import auth as auth_router
 

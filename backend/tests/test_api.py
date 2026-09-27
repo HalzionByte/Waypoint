@@ -69,8 +69,28 @@ def test_demo_login_grants_a_session_without_credentials(
     assert me.json()["email"] == "demo@waypoint.app"
 
 
-def test_demo_login_404s_when_the_demo_user_is_absent(client: TestClient):
-    """Fresh instance with seeding off: the frontend must fall through quietly."""
+def test_demo_login_seeds_itself_on_a_cold_instance(client: TestClient):
+    """A serverless instance may never run the lifespan event, so the demo
+    endpoint must create its own data rather than assume it exists."""
+    response = client.post("/api/auth/demo")
+    assert response.status_code == 200, response.text
+    token = response.json()["access_token"]
+
+    routes = client.get(
+        "/api/routes", headers={"Authorization": f"Bearer {token}"}
+    ).json()
+    assert len(routes) == 2
+    assert all(r["landmark_counts"]["total"] >= 3 for r in routes)
+
+
+def test_demo_login_404s_when_turned_off(client: TestClient, monkeypatch):
+    """Setting DEMO_AUTO_LOGIN=false must close the door completely."""
+    from app import config
+    from app.routers import auth as auth_router
+
+    monkeypatch.setattr(
+        auth_router, "settings", config.Settings(demo_auto_login=False)
+    )
     assert client.post("/api/auth/demo").status_code == 404
 
 

@@ -10,6 +10,7 @@ from ..deps import CurrentUser, DbSession
 from ..models import User
 from ..schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from ..security import create_access_token, hash_password, verify_password
+from ..services.bootstrap import ensure_demo_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -54,16 +55,25 @@ def me(user: CurrentUser) -> User:
 def demo_login(db: DbSession) -> TokenResponse:
     """Sign in as the shared demo account without credentials.
 
-    So a visitor lands in a working app rather than a login wall. Deliberately
-    404s (rather than 403) when disabled, which the frontend treats as "no demo
-    here, carry on unauthenticated".
+    So a visitor lands in a working app rather than a login wall. Creates the
+    demo content on first call, so it works on a cold instance.
     """
     if not settings.demo_auto_login:
         raise HTTPException(status_code=404, detail="Demo login is not available")
+
     user = db.scalar(select(User).where(User.email == DEMO_EMAIL))
     if user is None:
+        # Hard guarantee: a serverless instance may never have run the lifespan
+        # event, so create everything the demo needs right here.
+        ensure_demo_data()
+        db.expire_all()
+        user = db.scalar(select(User).where(User.email == DEMO_EMAIL))
+
+    if user is None:
         raise HTTPException(
-            status_code=404,
-            detail="The demo account has not been created on this instance",
+            status_code=503,
+            detail="The demo account could not be created on this instance",
         )
-    return TokenResponse(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
+    return TokenResponse(
+        access_token=create_access_token(user.id), user=UserOut.model_validate(user)
+    )

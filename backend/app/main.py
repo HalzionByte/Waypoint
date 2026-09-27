@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+import logging
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,19 +12,19 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .database import init_db
 from .routers import auth, community, landmarks, public, routes, verification
-from seed import seed_demo_data
+from .services.bootstrap import ensure_demo_data
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    init_db()
-    if settings.seed_demo_data:
-        # A fresh deploy should be demo-able the moment it comes up. Never let
-        # seeding take the app down with it.
-        try:
-            seed_demo_data()
-        except Exception as exc:  # noqa: BLE001
-            print(f"[startup] demo seed skipped: {exc}")
+    # Nice to have, not required: the demo endpoint seeds itself on demand, so
+    # a platform that skips lifespan still comes up populated.
+    try:
+        init_db()
+        if settings.seed_demo_data:
+            ensure_demo_data()
+    except Exception:  # noqa: BLE001 - never block startup on the seed
+        logging.getLogger("waypoint.bootstrap").exception("startup seed failed")
     yield
 
 

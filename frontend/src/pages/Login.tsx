@@ -49,8 +49,10 @@ export default function Login() {
           'The API is blocking requests (403). Turn off Vercel Deployment Protection ' +
             'in project Settings, then redeploy.',
         )
-      } else if (status === 404) {
-        setDemoError('The demo account has not been seeded on this instance.')
+      } else if (status === 404 || status === 503) {
+        setDemoError(
+          'The demo account could not be created. Check the function logs on Vercel.',
+        )
       } else if (status === 0) {
         setDemoError('Could not reach the API. Check the deployment logs.')
       } else {
