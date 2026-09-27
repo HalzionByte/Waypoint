@@ -91,10 +91,28 @@ start**. It also picks the `syd` region by default; change `primary_region` if y
 
 ### Deploying to Vercel instead
 
-The frontend alone deploys to Vercel as a static site, but the **backend cannot** — Vercel's
-filesystem is ephemeral, so SQLite and uploaded photos would vanish on every cold start. Point
-`VITE_API_BASE` at a separately hosted API (Fly, Railway, Render) and add that origin to the API's
-`CORS_ORIGINS`. Do not put FastAPI on Vercel serverless with SQLite.
+`vercel.json` is included and deploys the Vite build plus the API as one project:
+
+```bash
+npx vercel --prod
+npx vercel env add PUBLIC_BASE_URL production   # paste your real https:// URL
+npx vercel --prod                               # env vars only apply on a fresh deploy
+```
+
+**The trade-off you are accepting:** Vercel's filesystem is ephemeral, so the database and uploaded
+photos live in `/tmp` and are wiped whenever an instance recycles. Demo data **re-seeds on every
+cold start**, so a judge always lands on a populated, signed-in app — but anything a visitor creates
+is lost on recycle. Fine for a live pitch; do not demo photo uploads.
+
+If judges should be able to create routes and keep them, deploy the container instead (Fly, Railway,
+Render), where a mounted volume persists. `DATABASE_URL` and `UPLOAD_DIR` are the only two settings
+that change.
+
+To re-check the Vercel environment locally without deploying:
+
+```powershell
+.\backend\.venv\Scripts\python.exe .\scripts\verify_vercel_env.py
+```
 
 ### Tests
 

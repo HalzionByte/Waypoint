@@ -1,0 +1,16 @@
+node_modules
+frontend/node_modules
+frontend/dist
+backend/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.git
+backend/landmarkx.db
+backend/waypoint.db
+backend/*.db-journal
+backend/uploads/*
+!.gitkeep
+backend/.env
+*.md
+!README.md

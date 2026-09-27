@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -44,6 +45,14 @@ class Settings(BaseSettings):
     access_token_minutes: int = 60 * 24 * 7  # 7 days
 
     upload_dir: Path = BASE_DIR / "uploads"
+    # An empty value must mean "unset", not Path(".") — otherwise the API would
+    # think it has a frontend to serve and shadow its own routes.
+    @field_validator("static_dir", mode="before")
+    @classmethod
+    def _blank_is_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
     max_upload_bytes: int = 8 * 1024 * 1024  # 8 MB
     allowed_image_types: tuple[str, ...] = (
         "image/jpeg",
