@@ -4,12 +4,13 @@ import { useAuth } from '../context/useAuth'
 import { Spinner } from './ui'
 
 /**
- * There is no sign-in, so nothing should normally be blocked. This only waits
- * out the brief session handshake and, if the API is unreachable, explains why
- * the app looks empty instead of silently rendering a broken screen.
+ * There is no sign-in, so nothing is really gated. This only waits out the
+ * moment it takes to open the browser's database — and, if the browser refused
+ * storage (private mode, blocked site data), says so instead of rendering a
+ * dashboard that silently loses everything a judge does.
  */
 export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth()
+  const { user, loading, error } = useAuth()
 
   if (loading) {
     return (
@@ -19,19 +20,23 @@ export default function ProtectedRoute({ children }: { children: ReactNode }) {
     )
   }
 
-  if (!user) {
+  if (error) {
     return (
       <div className="centered">
         <div className="auth__card">
-          <h1>Cannot reach the API</h1>
+          <h1>Storage is blocked</h1>
+          <p className="auth__hint">{error}</p>
           <p className="auth__hint">
-            The demo data loads from the server. If this does not resolve on its own, the
-            backend is unreachable — check the deployment and its function logs.
+            WayPoint keeps everything in this browser, so it needs site data to be
+            allowed. Turn off private browsing, or allow cookies and storage for this
+            site, then reload.
           </p>
         </div>
       </div>
     )
   }
+
+  if (!user) return null
 
   return <>{children}</>
 }

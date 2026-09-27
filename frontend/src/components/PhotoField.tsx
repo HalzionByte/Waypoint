@@ -1,10 +1,10 @@
 import { useId, useRef, useState } from 'react'
 
-import { photoUrl as photoUrlOf } from './imgUrl'
+import { usePhotoSrc } from '../lib/usePhotoSrc'
 import { validatePhoto } from '../lib/upload'
 
 interface Props {
-  /** Saved URL, or a local object URL while composing a new landmark. */
+  /** Saved photo reference, or a local object URL while composing a landmark. */
   photoUrl: string | null
   onSelect: (file: File) => void
   onClear?: () => void
@@ -27,8 +27,8 @@ export default function PhotoField({
   hint,
   busy = false,
 }: Props) {
-  // Resolve against the API origin for split deploys; a no-op when same-origin.
-  const photoUrl = photoUrlOf(photoUrlProp)
+  // Resolves an IndexedDB reference to something an <img> can load.
+  const photoUrl = usePhotoSrc(photoUrlProp)
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const inputId = useId()

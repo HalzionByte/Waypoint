@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { ApiError, api } from '../api/client'
 import type { PublicLandmark, RouteSummary } from '../api/types'
-import { photoUrl } from '../components/imgUrl'
+import { LandmarkPhoto } from '../components/imgUrl'
 import PhotoField from '../components/PhotoField'
 import { Alert, EmptyState, Spinner, StatusPill } from '../components/ui'
 import { formatDate, relativeDue } from '../lib/format'
@@ -215,7 +215,12 @@ function LibraryCard({
     <li className={`lib-card${landmark.is_disputed ? ' lib-card--disputed' : ''}`}>
       <div className="lib-card__photo">
         {landmark.photo_url ? (
-          <img src={photoUrl(landmark.photo_url)!} alt={landmark.name} loading="lazy" />
+          <LandmarkPhoto
+            photoUrl={landmark.photo_url}
+            alt={landmark.name}
+            className="lib-card__img"
+            placeholder=""
+          />
         ) : (
           <div className="photo-placeholder photo-placeholder--flat">No photo</div>
         )}

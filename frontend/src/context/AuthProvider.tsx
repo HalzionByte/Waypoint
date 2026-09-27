@@ -1,63 +1,48 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { api, getToken, setToken } from '../api/client'
-import type { User } from '../api/types'
+import { LOCAL_USER, ready } from '../lib/store'
 import { AuthContext } from './authContext'
+import type { User } from '../api/types'
 
 /**
- * No sign-in step. Every visitor gets a session automatically, so the two
- * prebuilt demo routes are always on the dashboard and a judge never meets a
- * login form. The backend still has real auth (routes and community landmarks
- * need an owner) — it just never asks anyone to log in.
+ * No sign-in, and no server to ask. The only asynchronous part is opening the
+ * browser's database, so `loading` covers a few milliseconds rather than a
+ * network round trip that might never succeed.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
-    const finish = (value: User | null) => {
-      if (cancelled) return
-      setUser(value)
-      setLoading(false)
-    }
-
-    if (getToken()) {
-      api
-        .me()
-        .then((me) => finish(me))
-        .catch(() => {
-          // Stale or rejected token: drop it and take a fresh session below.
-          setToken(null)
-          return api
-            .demoLogin()
-            .then((result) => {
-              setToken(result.access_token)
-              finish(result.user)
-            })
-            .catch(() => finish(null))
-        })
-      return () => {
-        cancelled = true
-      }
-    }
-
-    api
-      .demoLogin()
-      .then((result) => {
-        setToken(result.access_token)
-        finish(result.user)
+    ready()
+      .then(() => {
+        if (!cancelled) setUser(LOCAL_USER)
       })
-      .catch(() => finish(null))
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'This browser blocked local storage, so WayPoint cannot save anything.',
+        )
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
 
     return () => {
       cancelled = true
     }
   }, [])
 
-  const value = useMemo(() => ({ user, loading }), [user, loading])
+  const value = useMemo(
+    () => ({ user, loading, error }),
+    [user, loading, error],
+  )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

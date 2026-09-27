@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
-import { ApiError, api, publicQrUrl } from '../api/client'
+import { ApiError, api } from '../api/client'
 import type { RouteDetail } from '../api/types'
-import { photoUrl } from '../components/imgUrl'
+import { LandmarkPhoto } from '../components/imgUrl'
+import QrImage, { QrDownload } from '../components/QrImage'
 import { Alert, Spinner } from '../components/ui'
 import { formatDate } from '../lib/format'
+import { buildShareLink } from '../lib/share'
 
 export default function RouteShare() {
   const { routeId } = useParams()
@@ -25,10 +27,21 @@ export default function RouteShare() {
       )
   }, [id])
 
+  /**
+   * The link recipients get carries the route in its own fragment, because
+   * there is no server to look a token up on. The QR code cannot carry a
+   * payload that size, so it encodes the short link and only opens on a device
+   * that already has the route.
+   */
+  const shareLink = useMemo(
+    () => (route ? buildShareLink(route.share_token, route) : ''),
+    [route],
+  )
+
   async function onCopy() {
-    if (!route) return
+    if (!shareLink) return
     try {
-      await navigator.clipboard.writeText(route.share_url)
+      await navigator.clipboard.writeText(shareLink)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -57,7 +70,7 @@ export default function RouteShare() {
     if (!route) return
     if (navigator.share) {
       void navigator
-        .share({ title: route.title, text: `How to reach ${route.title}`, url: route.share_url })
+        .share({ title: route.title, text: `How to reach ${route.title}`, url: shareLink })
         .catch(() => undefined)
     } else {
       void onCopy()
@@ -68,9 +81,9 @@ export default function RouteShare() {
   if (!route) return <Spinner label="Loading share details…" />
 
   const whatsapp = `https://wa.me/?text=${encodeURIComponent(
-    `How to reach ${route.title}: ${route.share_url}`,
+    `How to reach ${route.title}: ${shareLink}`,
   )}`
-  const sms = `sms:?&body=${encodeURIComponent(`How to reach ${route.title}: ${route.share_url}`)}`
+  const sms = `sms:?&body=${encodeURIComponent(`How to reach ${route.title}: ${shareLink}`)}`
 
   return (
     <div className="page">
@@ -94,11 +107,15 @@ export default function RouteShare() {
         <section className="share__link">
           <h2>Share link</h2>
           <div className="copy-row">
-            <input readOnly value={route.share_url} onFocus={(e) => e.target.select()} />
+            <input readOnly value={shareLink} onFocus={(e) => e.target.select()} />
             <button className="btn" onClick={() => void onCopy()}>
               {copied ? 'Copied' : 'Copy'}
             </button>
           </div>
+          <p className="muted small">
+            The whole route travels inside this link, so it opens on any device — no account,
+            no install. Photos stay on the device that took them.
+          </p>
 
           <div className="share__buttons">
             <a className="btn" href={whatsapp} target="_blank" rel="noreferrer">
@@ -114,18 +131,13 @@ export default function RouteShare() {
 
           <h2>Or let them scan</h2>
           <div className="share__qr">
-            {/* Token-scoped URL: an <img> request cannot send an auth header. */}
-            <img src={publicQrUrl(route.share_token)} alt={`QR code for ${route.title}`} />
+            <QrImage text={route.share_url} alt={`QR code for ${route.title}`} />
             <p className="muted">
-              Print this on a sign, a clinic notice, or a business card. Anyone who scans it
-              opens this exact route.
+              Prints as a short code. A QR code cannot hold the route itself, so this one
+              opens on a device that already has WayPoint data — send the link above for
+              anything else.
             </p>
-            <a
-              className="btn btn--ghost btn--sm"
-              href={`${publicQrUrl(route.share_token)}?download=true`}
-            >
-              Download QR
-            </a>
+            <QrDownload text={route.share_url} name={`${route.title} QR`} />
           </div>
 
           <footer className="share__foot">
@@ -147,7 +159,7 @@ export default function RouteShare() {
             {route.landmarks.map((landmark) => (
               <li key={landmark.id}>
                 {landmark.photo_url ? (
-                  <img src={photoUrl(landmark.photo_url)!} alt="" />
+                  <LandmarkPhoto photoUrl={landmark.photo_url} alt="" />
                 ) : (
                   <div className="photo-placeholder photo-placeholder--sm" />
                 )}

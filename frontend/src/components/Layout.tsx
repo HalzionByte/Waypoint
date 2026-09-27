@@ -1,10 +1,36 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import Logo from './Logo'
 import { useAuth } from '../context/useAuth'
+import { resetAll } from '../lib/store'
 
 export default function Layout() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const [resetting, setResetting] = useState(false)
+
+  /**
+   * Everything lives in this browser now, so a demo that has been clicked
+   * through is one reload away from being a demo again. This is the fastest
+   * way back to a clean state between runs.
+   */
+  async function onReset() {
+    if (
+      !window.confirm(
+        'Delete everything stored in this browser and restore the sample routes?\n\nThis cannot be undone.',
+      )
+    ) {
+      return
+    }
+    setResetting(true)
+    try {
+      await resetAll()
+      navigate('/dashboard')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   return (
     <div className="app">
@@ -37,6 +63,13 @@ export default function Layout() {
 
       <footer className="footer">
         <p>Maps get you to the area. WayPoint gets you to the door.</p>
+        <p className="muted small">
+          Everything here is stored in this browser only — no account, no server. Reloading
+          keeps your work.{' '}
+          <button className="linkish" disabled={resetting} onClick={() => void onReset()}>
+            {resetting ? 'Restoring…' : 'Reset to the sample data'}
+          </button>
+        </p>
       </footer>
     </div>
   )

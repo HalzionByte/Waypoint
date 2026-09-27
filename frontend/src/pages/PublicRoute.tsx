@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
-import { ApiError, api, publicQrUrl } from '../api/client'
-import type { PublicRoute } from '../api/types'
-import { photoUrl } from '../components/imgUrl'
+import { ApiError, api } from '../api/client'
+import type { PublicRoute as PublicRouteData } from '../api/types'
+import QrImage from '../components/QrImage'
+import { LandmarkPhoto } from '../components/imgUrl'
 import RouteMap from '../components/map/RouteMap'
 import { Alert, Spinner, StatusPill } from '../components/ui'
 import { actionIcon, actionLabel } from '../lib/actions'
@@ -11,7 +12,7 @@ import { formatDate, haversineMetres, walkingMinutes } from '../lib/format'
 
 export default function PublicRoute() {
   const { token } = useParams()
-  const [route, setRoute] = useState<PublicRoute | null>(null)
+  const [route, setRoute] = useState<PublicRouteData | null>(null)
   const [error, setError] = useState('')
   const [checked, setChecked] = useState<Set<number>>(new Set())
 
@@ -151,11 +152,10 @@ export default function PublicRoute() {
                 </div>
 
                 {landmark.photo_url ? (
-                  <img
+                  <LandmarkPhoto
                     className="viewer-step__photo"
-                    src={photoUrl(landmark.photo_url)!}
+                    photoUrl={landmark.photo_url}
                     alt={landmark.name}
-                    loading="lazy"
                   />
                 ) : (
                   <div className="photo-placeholder photo-placeholder--flat">
@@ -191,7 +191,7 @@ export default function PublicRoute() {
         </p>
         <details className="viewer__qr">
           <summary>Show QR code for this route</summary>
-          {token && <img src={publicQrUrl(token)} alt="Route QR code" />}
+          {token && <QrImage text={route.share_url} alt="Route QR code" size={260} />}
         </details>
       </footer>
     </div>

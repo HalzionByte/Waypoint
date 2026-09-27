@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError, api } from '../api/client'
 import type { Landmark, LandmarkAction, LandmarkInput, RouteDetail } from '../api/types'
-import { photoUrl } from '../components/imgUrl'
+import { LandmarkPhoto } from '../components/imgUrl'
 import PlacementPicker from '../components/map/PlacementPicker'
 import type { LatLng } from '../components/map/PlacementPicker'
 import PhotoField from '../components/PhotoField'
@@ -261,7 +261,12 @@ export default function RouteBuilder() {
                   {/* A photo is what makes a landmark recognisable, so its
                       presence should be obvious without opening the card. */}
                   {landmark.photo_url && (
-                    <img className="lm-card__thumb" src={photoUrl(landmark.photo_url)!} alt="" />
+                    <LandmarkPhoto
+                      photoUrl={landmark.photo_url}
+                      alt=""
+                      className="lm-card__thumb"
+                      placeholder=""
+                    />
                   )}
 
                   <button
@@ -309,7 +314,7 @@ export default function RouteBuilder() {
                   <div className="lm-card__body">
                     <div className="lm-card__photo">
                       <PhotoField
-                        photoUrl={photoUrl(landmark.photo_url)}
+                        photoUrl={landmark.photo_url}
                         alt={landmark.name}
                         busy={uploadingPhotoFor === landmark.id}
                         onSelect={(file) => void onPhoto(landmark, file)}

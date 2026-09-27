@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { ApiError, api } from '../api/client'
 import type { DueLandmark, VerificationSummary } from '../api/types'
-import { photoUrl } from '../components/imgUrl'
+import { LandmarkPhoto } from '../components/imgUrl'
 import { Alert, EmptyState, Spinner, StatusPill } from '../components/ui'
 import { formatDate } from '../lib/format'
 
@@ -96,7 +96,12 @@ export default function Verification() {
             <li key={landmark.id} className="due-item">
               <div className="due-item__photo">
                 {landmark.photo_url ? (
-                  <img src={photoUrl(landmark.photo_url)!} alt={landmark.name} />
+                  <LandmarkPhoto
+                    photoUrl={landmark.photo_url}
+                    alt={landmark.name}
+                    className="due-item__img"
+                    placeholder=""
+                  />
                 ) : (
                   <div className="photo-placeholder">No photo</div>
                 )}

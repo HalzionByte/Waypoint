@@ -1,4 +1,6 @@
-// Mirrors the FastAPI schemas in backend/app/schemas.py
+// The shapes the browser-side data layer returns. These used to mirror the
+// FastAPI schemas in backend/app/schemas.py and still do, so the two can be
+// diffed against each other if a server is ever brought back.
 
 export type LandmarkAction =
   | 'start'
@@ -18,12 +20,6 @@ export interface User {
   name: string
   email: string
   created_at: string
-}
-
-export interface TokenResponse {
-  access_token: string
-  token_type: string
-  user: User
 }
 
 export interface Landmark {

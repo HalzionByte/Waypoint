@@ -8,29 +8,21 @@ import type {
   RouteDetail,
   RouteInput,
   RouteSummary,
-  TokenResponse,
   User,
   VerificationSummary,
 } from './types'
+import * as store from '../lib/store'
+import { readSharePayload } from '../lib/share'
 
 /**
- * In dev, Vite proxies /api to the FastAPI server. In a single-container
- * deploy the same origin serves both, so a relative path is right there too.
- * VITE_API_BASE is only needed for a split setup (frontend on one host, API
- * on another).
+ * The data API, served by this browser.
+ *
+ * Every function keeps the signature and the return shape it had when a FastAPI
+ * backend served it, so the pages did not have to change. Two deliberate
+ * differences: there is no auth of any kind, and the shared view falls back to
+ * the link's own payload, because with no server a token cannot be looked up on
+ * a device that never saw the route.
  */
-const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
-
-const TOKEN_KEY = 'waypoint.token'
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-export function setToken(token: string | null): void {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  else localStorage.removeItem(TOKEN_KEY)
-}
 
 export class ApiError extends Error {
   status: number
@@ -41,139 +33,125 @@ export class ApiError extends Error {
   }
 }
 
-type RequestOptions = {
-  method?: string
-  body?: unknown
-  auth?: boolean
-  formData?: FormData
+/**
+ * Store operations are synchronous once ready(), so a read is turned into a
+ * resolved promise for shape-compatibility. Writes stay genuinely async.
+ */
+function read<T>(fn: () => T): Promise<T> {
+  return store.ready().then(fn)
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, auth = true, formData } = options
-  const headers: Record<string, string> = {}
-  if (auth) {
-    const token = getToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
-
-  const response = await fetch(`${API_BASE}/api${path}`, {
-    method,
-    headers,
-    body: formData ?? (body !== undefined ? JSON.stringify(body) : undefined),
+/** Anything the store throws is a user-facing condition, not a crash. */
+function guard<T>(fn: () => Promise<T>): Promise<T> {
+  return fn().catch((err: unknown) => {
+    if (err instanceof ApiError) throw err
+    const message = err instanceof Error ? err.message : String(err)
+    throw new ApiError(400, message)
   })
-
-  if (response.status === 204) return undefined as T
-
-  const isJson = response.headers.get('content-type')?.includes('application/json')
-  const payload = isJson ? await response.json() : null
-
-  if (!response.ok) {
-    // FastAPI validation errors arrive as { detail: [...] }.
-    const detail = payload?.detail
-    const message = Array.isArray(detail)
-      ? detail.map((d: { msg?: string }) => d.msg).filter(Boolean).join('; ')
-      : (detail ?? `Request failed (${response.status})`)
-    if (response.status === 401) setToken(null)
-    throw new ApiError(response.status, message)
-  }
-
-  return payload as T
 }
 
 export const api = {
-  me: () => request<User>('/auth/me'),
+  me: (): Promise<User> => read(() => store.LOCAL_USER),
 
   /**
-   * The session every visitor gets. There is no sign-in form, so this runs
-   * automatically on boot and creates the demo content if it is missing.
+   * There is no sign-in form, so this is only kept for the boot path: open the
+   * database and, on first run, build the demo content.
    */
-  demoLogin: () => request<TokenResponse>('/auth/demo', { method: 'POST', auth: false }),
+  demoLogin: (): Promise<{ user: User }> => read(() => ({ user: store.LOCAL_USER })),
 
-  listRoutes: () => request<RouteSummary[]>('/routes'),
-  createRoute: (input: RouteInput) =>
-    request<RouteDetail>('/routes', { method: 'POST', body: input }),
-  getRoute: (id: number) => request<RouteDetail>(`/routes/${id}`),
-  updateRoute: (id: number, input: Partial<RouteInput> & { is_published?: boolean }) =>
-    request<RouteDetail>(`/routes/${id}`, { method: 'PATCH', body: input }),
-  deleteRoute: (id: number) => request<void>(`/routes/${id}`, { method: 'DELETE' }),
-  rotateShareToken: (id: number) =>
-    request<RouteSummary>(`/routes/${id}/share/rotate`, { method: 'POST' }),
-
-  addLandmark: (routeId: number, input: LandmarkInput) =>
-    request<Landmark>(`/routes/${routeId}/landmarks`, { method: 'POST', body: input }),
-  updateLandmark: (landmarkId: number, input: Partial<LandmarkInput>) =>
-    request<Landmark>(`/landmarks/${landmarkId}`, { method: 'PATCH', body: input }),
-  deleteLandmark: (landmarkId: number) =>
-    request<void>(`/landmarks/${landmarkId}`, { method: 'DELETE' }),
-  reorderLandmarks: (routeId: number, landmarkIds: number[]) =>
-    request<Landmark[]>(`/routes/${routeId}/landmarks/order`, {
-      method: 'PUT',
-      body: { landmark_ids: landmarkIds },
+  listRoutes: (): Promise<RouteSummary[]> => read(() => store.listRoutes()),
+  createRoute: (input: RouteInput): Promise<RouteDetail> => guard(() => store.createRoute(input)),
+  getRoute: (id: number): Promise<RouteDetail> =>
+    read(() => {
+      try {
+        return store.getRoute(id)
+      } catch {
+        throw new ApiError(404, 'That route no longer exists.')
+      }
     }),
-  verifyLandmark: (landmarkId: number) =>
-    request<Landmark>(`/landmarks/${landmarkId}/verify`, { method: 'POST' }),
-  uploadPhoto: (landmarkId: number, file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    return request<{ photo_url: string }>(`/landmarks/${landmarkId}/photo`, {
-      method: 'POST',
-      formData,
-    })
-  },
+  updateRoute: (
+    id: number,
+    input: Partial<RouteInput> & { is_published?: boolean },
+  ): Promise<RouteDetail> => guard(() => store.updateRoute(id, input)),
+  deleteRoute: (id: number): Promise<void> => guard(() => store.deleteRoute(id)),
+  rotateShareToken: (id: number): Promise<RouteSummary> =>
+    guard(() => store.rotateShareToken(id)),
 
-  verificationSummary: () => request<VerificationSummary>('/verification/summary'),
-  dueLandmarks: () => request<DueLandmark[]>('/verification/due'),
+  addLandmark: (routeId: number, input: LandmarkInput & { photo?: File | null }) =>
+    guard(() => store.addLandmark(routeId, input)),
+  updateLandmark: (landmarkId: number, input: Partial<LandmarkInput>) =>
+    guard(() => store.updateLandmark(landmarkId, input)),
+  deleteLandmark: (landmarkId: number): Promise<void> =>
+    guard(() => store.deleteLandmark(landmarkId)),
+  reorderLandmarks: (routeId: number, landmarkIds: number[]): Promise<Landmark[]> =>
+    guard(() => store.reorderLandmarks(routeId, landmarkIds)),
+  verifyLandmark: (landmarkId: number): Promise<Landmark> =>
+    guard(() => store.verifyLandmark(landmarkId)),
+  uploadPhoto: (landmarkId: number, file: File): Promise<{ photo_url: string }> =>
+    guard(() => store.attachPhoto(landmarkId, file)),
+
+  verificationSummary: (): Promise<VerificationSummary> => read(() => store.verificationSummary()),
+  dueLandmarks: (): Promise<DueLandmark[]> => read(() => store.dueLandmarks()),
 
   // ---------------------------------------------------------------- community
-  listPublicLandmarks: (params: {
-    stale?: boolean
-    disputed?: boolean
-    q?: string
-  } = {}) => {
-    const query = new URLSearchParams()
-    if (params.stale !== undefined) query.set('stale', String(params.stale))
-    if (params.disputed !== undefined) query.set('disputed', String(params.disputed))
-    if (params.q) query.set('q', params.q)
-    const suffix = query.toString()
-    return request<PublicLandmark[]>(`/public-landmarks${suffix ? `?${suffix}` : ''}`)
-  },
+  listPublicLandmarks: (
+    params: { stale?: boolean; disputed?: boolean; q?: string } = {},
+  ): Promise<PublicLandmark[]> => read(() => store.listPublicLandmarks(params)),
 
-  getPublicLandmark: (id: number) => request<PublicLandmark>(`/public-landmarks/${id}`),
-
-  contribute: (input: PublicLandmarkInput) =>
-    request<PublicLandmark>('/public-landmarks', { method: 'POST', body: input }),
-
-  updatePublicLandmark: (id: number, input: Partial<PublicLandmarkInput>) =>
-    request<PublicLandmark>(`/public-landmarks/${id}`, { method: 'PATCH', body: input }),
-
-  uploadPublicLandmarkPhoto: (id: number, file: File) => {
-    const formData = new FormData()
-    formData.append('file', file)
-    return request<PublicLandmark>(`/public-landmarks/${id}/photo`, {
-      method: 'POST',
-      formData,
-    })
-  },
-
-  verifyPublicLandmark: (id: number) =>
-    request<PublicLandmark>(`/public-landmarks/${id}/verify`, { method: 'POST' }),
-
-  reportPublicLandmark: (id: number, note: string) =>
-    request<PublicLandmark>(`/public-landmarks/${id}/report`, {
-      method: 'POST',
-      body: { note },
+  getPublicLandmark: (id: number): Promise<PublicLandmark> =>
+    read(() => {
+      try {
+        return store.getPublicLandmark(id)
+      } catch {
+        throw new ApiError(404, 'That community landmark no longer exists.')
+      }
     }),
 
-  usePublicLandmark: (id: number, routeId: number) =>
-    request<Landmark>(`/public-landmarks/${id}/use`, {
-      method: 'POST',
-      body: { route_id: routeId },
-    }),
+  contribute: (input: PublicLandmarkInput): Promise<PublicLandmark> =>
+    guard(() => store.contributePublicLandmark(input)),
 
-  publicRoute: (token: string) =>
-    request<PublicRoute>(`/public/routes/${token}`, { auth: false }),
+  updatePublicLandmark: (
+    id: number,
+    input: Partial<PublicLandmarkInput>,
+  ): Promise<PublicLandmark> => guard(() => store.updatePublicLandmark(id, input)),
+
+  uploadPublicLandmarkPhoto: (id: number, file: File): Promise<PublicLandmark> =>
+    guard(() => store.uploadPublicLandmarkPhoto(id, file)),
+
+  verifyPublicLandmark: (id: number): Promise<PublicLandmark> =>
+    guard(() => store.verifyPublicLandmark(id)),
+
+  reportPublicLandmark: (id: number, note: string): Promise<PublicLandmark> =>
+    guard(() => store.reportPublicLandmark(id, note)),
+
+  usePublicLandmark: (id: number, routeId: number): Promise<Landmark> =>
+    guard(() => store.usePublicLandmark(id, routeId)),
+
+  /**
+   * The recipient view. Looks in this browser's data first, then falls back to
+   * the payload carried by the link itself, which is what makes a shared link
+   * work on a device that has never seen the route.
+   */
+  publicRoute: (token: string): Promise<PublicRoute> =>
+    read(() => {
+      const local = store.getSharedRoute(token)
+      if (local) return local
+
+      const packed = readSharePayload(window.location.hash)
+      if (packed) {
+        return {
+          ...packed,
+          share_url: store.shareUrlFor(token),
+          last_updated: new Date().toISOString(),
+        }
+      }
+
+      throw new ApiError(
+        404,
+        'This link is not stored in this browser. Open it on the device that created it, or ask for the link to be sent again.',
+      )
+    }),
 }
 
-/** Token-scoped so it works in an <img> tag (no Authorization header possible). */
-export const publicQrUrl = (token: string) => `${API_BASE}/api/public/routes/${token}/qr`
+/** QR codes are drawn in the browser now; see `qrDataUrl`. */
+export const publicQrUrl = (token: string): string => store.shareUrlFor(token)
