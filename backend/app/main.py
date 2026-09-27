@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,6 +25,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             ensure_demo_data()
     except Exception:  # noqa: BLE001 - never block startup on the seed
         logging.getLogger("waypoint.bootstrap").exception("startup seed failed")
+
+    # Render's dashboard is the only window into a misconfigured deploy, so log
+    # the settings that are easy to get wrong rather than failing silently.
+    logging.getLogger("waypoint").info(
+        "startup: db=%s uploads=%s seed=%s demo_login=%s frontend=%s api_base=%s",
+        settings.database_url,
+        settings.upload_dir,
+        settings.seed_demo_data,
+        settings.demo_auto_login,
+        settings.public_base_url,
+        settings.public_api_base or "(relative photo URLs)",
+    )
     yield
 
 
@@ -39,15 +51,30 @@ app = FastAPI(
 )
 
 # CORS is only needed when the frontend is served from a different origin
-# (Vite in dev, or a split Vercel + container deploy). A single-container deploy
+# (Vite in dev, or a split Vercel + Render deploy). A single-container deploy
 # serves both from one origin and does not need it.
 if settings.static_dir is None or not settings.static_dir.is_dir():
+    # No explicit CORS_ORIGINS means the list is still the localhost default,
+    # i.e. nobody set it up. In that case allow any origin rather than failing
+    # every request from the deployed site with a CORS error the user cannot see
+    # in the browser. Safe here because auth is a Bearer token, not a cookie, so
+    # nothing is gained by locking the origin down — and it stays open even if a
+    # request smuggles credentials, because allow_credentials is False.
+    default_origins = {"http://localhost:5173", "http://127.0.0.1:5173"}
+    configured = tuple(settings.cors_origins)
+    wildcard = set(configured) == default_origins
+    origins = ["*"] if wildcard else list(configured)
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=list(settings.cors_origins),
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=not wildcard,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+    logging.getLogger("waypoint").info(
+        "CORS origins: %s",
+        "* (unset CORS_ORIGINS - any origin allowed)" if wildcard else origins,
     )
 
 app.include_router(auth.router, prefix=settings.api_prefix)
@@ -64,6 +91,38 @@ app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads"
 @app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": settings.app_name}
+
+
+@app.get("/health/config", tags=["meta"])
+def health_config(request: Request) -> dict[str, object]:
+    """Deploy sanity check, readable without an account.
+
+    Open this in a browser to confirm the API is up and that the frontend can
+    actually reach it. `caller_origin_allowed` is the field that matters when
+    the site loads but shows no data: false here means the Vercel origin is
+    missing from CORS_ORIGINS, and the browser is silently dropping every
+    request.
+    """
+    origin = request.headers.get("origin")
+    allowed = list(settings.cors_origins)
+    return {
+        "status": "ok",
+        "caller_origin": origin,
+        "caller_origin_allowed": (
+            "*" in allowed
+            or not settings.static_dir
+            or origin is None
+            or origin in allowed
+        ),
+        "database": settings.database_url,
+        "upload_dir": str(settings.upload_dir),
+        "public_base_url": settings.public_base_url,
+        "public_api_base": settings.public_api_base or "(relative photo URLs)",
+        "cors_origins": allowed,
+        "seed_demo_data": settings.seed_demo_data,
+        "demo_auto_login": settings.demo_auto_login,
+        "verification_days": settings.verification_days,
+    }
 
 
 # --------------------------------------------------------- built frontend (prod)

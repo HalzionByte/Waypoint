@@ -14,6 +14,7 @@ from .schemas import (
 )
 from .services import freshness
 from .services.qr import share_url
+from .services.storage import media_url
 
 
 def landmark_out(landmark: Landmark) -> LandmarkOut:
@@ -32,6 +33,9 @@ def landmark_out(landmark: Landmark) -> LandmarkOut:
         data.last_verified = source.last_verified
         data.next_verification = source.next_verification
 
+    # Applied once, after the override, so both a route's own photo and a
+    # borrowed community photo come back as absolute URLs.
+    data.photo_url = media_url(data.photo_url)
     data.is_stale = freshness.is_stale(data.next_verification)
     return data
 
@@ -43,7 +47,7 @@ def public_landmark_out(
     return PublicLandmarkOut(
         id=landmark.id,
         name=landmark.name,
-        photo_url=landmark.photo_url,
+        photo_url=media_url(landmark.photo_url),
         lat=landmark.lat,
         lng=landmark.lng,
         description=landmark.description,

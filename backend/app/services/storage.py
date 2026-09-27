@@ -29,6 +29,20 @@ class StoredPhoto:
     size: int
 
 
+def media_url(path: str | None) -> str | None:
+    """Expand a stored relative photo path for the browser.
+
+    Photos live in the database as "/uploads/<file>" so the rows stay portable
+    and delete_photo() can reason about them. That relative form only works when
+    the site and the API share an origin. With the frontend on Vercel and the API
+    on Render they do not, so the API's own origin is prepended on the way out.
+    """
+    if not path or not path.startswith("/"):
+        return path
+    base = settings.public_api_base.rstrip("/")
+    return f"{base}{path}" if base else path
+
+
 async def save_photo(upload: UploadFile) -> StoredPhoto:
     content_type = (upload.content_type or "").split(";")[0].strip().lower()
     if content_type not in settings.allowed_image_types:

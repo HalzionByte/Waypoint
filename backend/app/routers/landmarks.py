@@ -10,7 +10,7 @@ from ..models import Landmark, Route
 from ..schemas import LandmarkOut, LandmarkUpdate, PhotoUploadOut
 from ..serializers import landmark_out
 from ..services import freshness
-from ..services.storage import delete_photo, save_photo
+from ..services.storage import delete_photo, media_url, save_photo
 
 router = APIRouter(prefix="/landmarks", tags=["landmarks"])
 
@@ -74,7 +74,7 @@ async def upload_photo(
 
     if previous and previous != stored.url:
         delete_photo(previous)
-    return PhotoUploadOut(photo_url=stored.url)
+    return PhotoUploadOut(photo_url=media_url(stored.url))
 
 
 @router.post("/{landmark_id}/verify", response_model=LandmarkOut)

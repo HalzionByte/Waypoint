@@ -1,0 +1,90 @@
+# WayPoint — Render blueprint
+#
+#   Render dashboard -> New -> Blueprint -> select this repo
+#
+# The API lives here; the frontend stays on Vercel. This file creates the Web
+# Service and a persistent disk, and sets every environment variable the app
+# reads. The two URLs below are the only things you must edit: they are left as
+# obvious placeholders so a deploy cannot silently point at localhost.
+#
+# After the first deploy, copy the new service URL (https://<name>.onrender.com)
+# into the "Placeholders" section and click "Apply" to update the environment.
+
+services:
+  - type: web
+    name: waypoint-api
+    runtime: python
+
+    # Starter, not free, for one reason: Render does not support persistent
+    # disks on free instances, and without a disk every route and photo a judge
+    # creates is wiped on restart. If you only need the read-only demo, change
+    # this to `free` and delete the whole `disk:` block below.
+    plan: starter
+
+    # Singapore is the nearest region to Karachi. Change it to oregon or
+    # frankfurt if your judges are elsewhere; every extra hop shows up as lag
+    # when the map loads.
+    region: singapore
+    rootDir: backend
+
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    healthCheckPath: /health
+
+    # Free instances sleep after 15 minutes idle and cold-start slowly, so the
+    # first request after a pause can take ~50s and look like a crash. Starter
+    # instances stay awake, which is what you want in front of judges.
+    autoDeploy: true
+
+    envVars:
+      # Render's default Python has moved to 3.13/3.14, where some dependency
+      # wheels are still building from source. Pin to a version with wheels for
+      # everything in requirements.txt so the build is fast and predictable.
+      - key: PYTHON_VERSION
+        value: "3.12.11"
+
+      # ------------------------------------------------------------ required
+      - key: JWT_SECRET
+        generateValue: true
+
+      # The FRONTEND url, not this service's url. Every share link and QR code
+      # is built from it, so a wrong value sends recipients to the wrong place.
+      - key: PUBLIC_BASE_URL
+        sync: false # set to https://<your-vercel-app>.vercel.app
+
+      # This service's own origin, so landmark photos resolve from the browser.
+      # Leave empty to use the Render URL shown in the dashboard.
+      - key: PUBLIC_API_BASE
+        sync: false # set to https://waypoint-api.onrender.com
+
+      # The Vercel origin allowed to call this API. Comma separated.
+      # "*" is the fallback if you leave this unset.
+      - key: CORS_ORIGINS
+        sync: false # set to https://<your-vercel-app>.vercel.app
+
+      # ------------------------------------------------------- persistence
+      # The disk mounted at /data is what survives redeploys and restarts.
+      # Without it everything a judge creates is lost when the instance recycles,
+      # which matters because they will be creating routes and uploading photos.
+      - key: DATABASE_URL
+        value: sqlite:////data/waypoint.db
+      - key: UPLOAD_DIR
+        value: /data/uploads
+
+      # ------------------------------------------------------------ behaviour
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: DEMO_AUTO_LOGIN
+        value: "true"
+      - key: VERIFICATION_DAYS
+        value: "180"
+
+      # The frontend is on Vercel, so the API must never try to serve a site.
+      - key: STATIC_DIR
+        value: ""
+
+    disk:
+      name: waypoint-data
+      mountPath: /data
+      sizeGB: 1

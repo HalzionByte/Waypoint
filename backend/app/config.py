@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -53,6 +55,18 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    # Accepts both a JSON array and a friendlier comma-separated list, so
+    # CORS_ORIGINS works in a Render/Vercel dashboard input box.
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                return json.loads(text)
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
     max_upload_bytes: int = 8 * 1024 * 1024  # 8 MB
     allowed_image_types: tuple[str, ...] = (
         "image/jpeg",
@@ -61,8 +75,17 @@ class Settings(BaseSettings):
         "image/gif",
     )
 
-    # Public base URL used when generating QR codes / share links.
+    # Public base URL used when generating QR codes / share links. In a split
+    # deploy this is the FRONTEND's URL, so recipients land on the site rather
+    # than on the API.
     public_base_url: str = "http://localhost:5173"
+
+    # Absolute origin of THIS api, e.g. https://waypoint-api.onrender.com.
+    # Photo paths are stored in the database as relative (/uploads/x.jpg) and are
+    # only expanded to absolute URLs on the way out when this is set. Without it
+    # a split deploy serves the site from Vercel and every photo 404s, because
+    # the browser resolves /uploads/... against the site's own origin.
+    public_api_base: str = ""
 
     # A landmark must be re-confirmed within this many days (PRD: 6 months).
     verification_days: int = 180
@@ -72,7 +95,10 @@ class Settings(BaseSettings):
     # no CORS to configure. Unset in dev, where Vite serves the frontend.
     static_dir: Path | None = None
 
-    cors_origins: tuple[str, ...] = (
+    # NoDecode stops pydantic-settings from trying to json.loads() the env value
+    # first, which is what makes a plain comma-separated list possible. Without
+    # it, CORS_ORIGINS=https://a.app,https://b.app is a hard startup crash.
+    cors_origins: Annotated[tuple[str, ...], NoDecode] = (
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     )
