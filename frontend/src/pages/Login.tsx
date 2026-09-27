@@ -39,8 +39,23 @@ export default function Login() {
     try {
       await enterDemo()
       navigate('/dashboard', { replace: true })
-    } catch {
-      setDemoError('The demo account is not available on this instance.')
+    } catch (err) {
+      // Surface the real cause. A 403 means the platform is blocking the API
+      // (Vercel Deployment Protection), a 404 means the demo was not seeded —
+      // very different fixes, so do not collapse them into one message.
+      const status = err instanceof ApiError ? err.status : 0
+      if (status === 403) {
+        setDemoError(
+          'The API is blocking requests (403). Turn off Vercel Deployment Protection ' +
+            'in project Settings, then redeploy.',
+        )
+      } else if (status === 404) {
+        setDemoError('The demo account has not been seeded on this instance.')
+      } else if (status === 0) {
+        setDemoError('Could not reach the API. Check the deployment logs.')
+      } else {
+        setDemoError(`Could not open the demo (error ${status}).`)
+      }
     } finally {
       setDemoBusy(false)
     }
