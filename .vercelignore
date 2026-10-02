@@ -12,8 +12,12 @@ backend/uploads/*
 !.gitkeep
 backend/.env
 
-# The backend is not built or deployed. Excluding it keeps the Vercel upload
+# The API is not deployed to Vercel. In a split deploy it runs on Render/Railway/Fly
+# and Vercel only ever builds frontend/. Excluding the backend keeps the upload
 # small and stops the Python toolchain from being installed for nothing.
+#
+# For the single-container deploy there is no Vercel step at all — one process
+# serves both the API and the built site. See README "Deploying".
 backend
 Dockerfile
 fly.toml

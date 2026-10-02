@@ -1,10 +1,9 @@
 import { useId, useRef, useState } from 'react'
 
-import { usePhotoSrc } from '../lib/usePhotoSrc'
 import { validatePhoto } from '../lib/upload'
 
 interface Props {
-  /** Saved photo reference, or a local object URL while composing a landmark. */
+  /** Saved photo URL, or a local object URL while composing a landmark. */
   photoUrl: string | null
   onSelect: (file: File) => void
   onClear?: () => void
@@ -20,15 +19,13 @@ interface Props {
  * behaves like a real button for keyboard and screen-reader users.
  */
 export default function PhotoField({
-  photoUrl: photoUrlProp,
+  photoUrl,
   onSelect,
   onClear,
   alt = '',
   hint,
   busy = false,
 }: Props) {
-  // Resolves an IndexedDB reference to something an <img> can load.
-  const photoUrl = usePhotoSrc(photoUrlProp)
   const inputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const inputId = useId()

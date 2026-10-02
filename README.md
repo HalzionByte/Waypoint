@@ -15,96 +15,195 @@ Built from `LandmarkX_PRD.docx`.
 
 ---
 
-## There is no backend
+## Architecture
 
-WayPoint is a **static site**. All data — routes, landmarks, community entries, photos — lives in the
-visitor's own browser, in IndexedDB. There is no server, no database to provision, no API key, and
-no environment variables to set.
+A React SPA and a FastAPI service, talking JSON over a small REST API.
 
-That is a deliberate trade, and this section is the honest version of what it costs and buys.
+```
+frontend/          React 19 + TypeScript + Vite
+  src/api/         client.ts — the data API, and the response types
+  src/lib/http.ts  the only module that calls fetch(): token, errors, uploads
+  src/context/     the session (AuthProvider)
+  src/components/  UI, including the Leaflet wrappers
+  src/pages/       landing, sign-in, dashboard, builder, share, re-checks, viewer
+  src/lib/         share/format/action helpers, photo validation, QR rendering
 
-**Buys**
+backend/           FastAPI + SQLAlchemy + SQLite (PostgreSQL-ready)
+  app/routers/     auth, routes, landmarks, public, community, verification
+  app/services/    freshness rules, photo storage, QR/share URLs, demo seeding
+  app/schemas.py   request/response contracts — mirrored by frontend/src/api/types.ts
+  tests/           52 tests
+```
 
-- Deploys anywhere static hosting runs, with nothing to configure.
-- Cannot go down, and cannot be rate-limited or hacked into an outage.
-- Photo upload, route creation and the community library all work fully, with no size ceiling worth
-  worrying about.
-- Reloading the page keeps everything. A judge's work survives a refresh.
+`src/api/client.ts` is the seam. Every page calls `api.*()` and knows nothing about transport, so
+the data source has been swappable — it served the app from IndexedDB first, and now serves it from
+the API — without a single page changing.
 
-**Costs**
+### Auth
 
-- Data is per-browser. Two devices do not see each other's routes. A route shared as a link works
-  (see below), but there is no shared library across people.
-- Clearing site data wipes it. There is no server-side copy. The footer has a **Reset to the sample
-  data** button, which is the fastest way back to a clean demo between runs.
-- Anyone with the URL can edit everything. There is no auth at all.
+Bearer-token sessions. `POST /api/auth/register|login|demo` returns a JWT, the SPA keeps it in
+`localStorage`, and `lib/http.ts` attaches it to every request. A token the server rejects clears
+itself and drops the app to signed-out, so an expired session never leaves a half-broken screen.
 
-For a demo this is the right trade: it is the version that cannot fail on the day.
+Passwords are PBKDF2-HMAC-SHA256 at 260k rounds, hashed in `app/security.py` with no native build
+dependency. Swap in argon2 or bcrypt when there is a reason to.
+
+`/r/<token>` is deliberately anonymous — someone following a shared link has no account and is not
+asked for one. Everything else requires a session.
+
+### Why these choices
+
+- **Leaflet + OpenStreetMap.** No API key, no billing, no quota. The PRD asks for "an existing
+  mapping/navigation API rather than building a navigation engine" — OSM tiles satisfy that.
+  Swapping in Google Maps means replacing `components/map/*` only.
+- **Photos on the server, referenced by URL.** `app/services/storage.py` sits behind a small
+  interface so the local disk can be swapped for S3/R2 without touching a router.
+- **Freshness is computed, not scheduled.** Staleness is derived from `next_verification` on every
+  read, so it cannot drift out of sync with the data.
+- **The whole dataset is read per screen.** Every page fetches what it needs and renders it. No
+  client-side cache to invalidate, and no stale directions — which matters more here than in most
+  apps, because a stale landmark sends a person to the wrong door.
 
 ---
 
 ## Quick start
 
+Two processes. The API on 8000, Vite on 5173.
+
 ```powershell
+# terminal 1 — API
+cd backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
+```
+
+```powershell
+# terminal 2 — frontend
 cd frontend
 npm install
 npm run dev
 ```
 
-Open http://localhost:5173. The two sample routes and the community library are created in your
-browser on first load, so there is no seeding step and no login.
+Open http://localhost:5173. The sample routes and community library are seeded on first boot, so
+there is nothing to set up.
+
+**Vite proxies `/api` and `/uploads` to 127.0.0.1:8000** (see `vite.config.ts`), so the browser
+only ever talks to one origin and there is no CORS in development.
+
+The sign-in page has an **"open the demo account"** button that needs no credentials.
 
 ```powershell
+cd frontend
 npm run lint      # 0 warnings
 npm run build     # typecheck + production build
 ```
 
-## Deploying
+---
 
-Vercel, from the repo root:
+## Configuration
 
-```bash
-npx vercel --prod
-```
+Both halves read their own `.env` one directory down. Both are gitignored; start from the
+`.env.example` beside them. **Every value has a working default for local development**, so you only
+need to touch them when deploying.
 
-`vercel.json` builds `frontend/` as a static site and rewrites unknown paths to `index.html`, so deep
-links such as `/r/<token>` survive a refresh and a shared link can be pasted into any chat.
+`backend/.env`:
 
-Any other static host works the same way — build `frontend/`, publish `frontend/dist/`, and make sure
-unknown paths fall back to `index.html`. There are no environment variables to set, and no secrets
-to leak. The only optional one is `VITE_LOGO_URL` (see **Logo**).
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | SQLite in `backend/` | Point at `postgresql+psycopg://…` for production |
+| `JWT_SECRET` | an insecure dev default | **Must** be changed before deploying |
+| `PUBLIC_BASE_URL` | `http://localhost:5173` | The *frontend*, used to build share links and QR codes |
+| `PUBLIC_API_BASE` | empty | This API's origin — see below |
+| `STATIC_DIR` | unset | Path to the built SPA, for a single-container deploy |
+| `SEED_DEMO_DATA` | `true` | Seeds the demo account and samples on an empty database |
+| `DEMO_AUTO_LOGIN` | `true` | Enables the credential-free demo sign-in. Turn off for anything real |
+| `CORS_ORIGINS` | localhost | Only needed on a split deploy |
 
-### Before you demo
-
-- [ ] Open the deployed URL in a **private window** — that is what a judge does — and confirm you
-      land on a dashboard with both sample routes and no login.
-- [ ] Paste a share link into a chat and open it **on your phone**. That is the one thing most likely
-      to surprise you, and it is covered below.
-- [ ] Check a photo upload works on the demo machine's browser.
-- [ ] Keep the Reset button in mind: after a judge has clicked through and deleted your samples,
-      one click puts it back.
+`frontend/.env`: just `VITE_API_BASE_URL`, which should stay **empty** unless you are doing a split
+deploy. Empty means "same origin", which is correct for both dev and a single container.
 
 ---
 
-## Share links without a server
+## Deploying
 
-A share link used to be `origin/r/<token>` with the token looked up in a database. With no server
-there is nothing to look it up, so **the route travels inside the link**: the steps are packed into
-the URL fragment as base64url (`lib/share.ts`).
+Both shapes are supported and both are verified.
 
-A fragment is never sent to a server, so this costs no request and works on any device that opens the
-link. The recipient view reads this browser's own data first, and falls back to the payload, so a
-link opened on a phone with no WayPoint data still renders the full route, the map and the
-instructions.
+### Option A — one container (recommended)
 
-Two limits, both inherent to putting a route in a URL:
+One process serves the API *and* the built site. One public URL, no CORS, and relative `/uploads/…`
+paths just work.
 
-- **Photos do not travel.** A Blob is far too large for a URL, so a shared link shows the steps, the
-  map and the instructions, but not the pictures. Photos stay on the device that took them.
-- **The QR code encodes the short link** (`/r/<token>`), because a QR code cannot carry a payload this
-  size. So the QR opens on a device that already has the data — useful for a poster or a notice board
-  at your own place, not for sending to a stranger. **Send the link, not the QR**, when the recipient
-  is someone else's device.
+```bash
+cd frontend && npm run build          # produces frontend/dist
+```
+
+Then on the API host:
+
+```bash
+STATIC_DIR=../frontend/dist \
+PUBLIC_BASE_URL=https://your-domain \
+JWT_SECRET=<a real secret> \
+DEMO_AUTO_LOGIN=false \
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+FastAPI serves `/assets`, falls back to `index.html` for unknown paths (so `/dashboard` and
+`/r/<token>` survive a refresh), and deliberately refuses to let that fallback swallow `/api/*` —
+a mistyped endpoint 404s as JSON instead of returning HTML the client would fail to parse.
+
+### Option B — split (Vercel + a separate API host)
+
+Site on Vercel, API on Render/Railway/Fly.
+
+```bash
+# 1. the API host
+PUBLIC_BASE_URL=https://your-app.vercel.app \
+PUBLIC_API_BASE=https://your-api.onrender.com \
+CORS_ORIGINS=https://your-app.vercel.app \
+JWT_SECRET=<a real secret> \
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+```bash
+# 2. the frontend — VITE_API_BASE_URL is required here
+cd frontend
+VITE_API_BASE_URL=https://your-api.onrender.com npx vercel --prod
+```
+
+`vercel.json` builds `frontend/` as a static site and rewrites unknown paths to `index.html`.
+
+> **`PUBLIC_API_BASE` is the setting people miss.** Photos are stored as relative paths
+> (`/uploads/x.jpg`). Without it, a browser on the Vercel origin resolves those against the *site*,
+> not the API, and every photo 404s.
+
+### When the site loads but shows no data
+
+Open `<your-api>/health/config` in a browser. It reports whether the calling origin is allowed:
+
+```json
+{ "caller_origin_allowed": false, "cors_origins": ["..."] }
+```
+
+`false` means the frontend's origin is missing from `CORS_ORIGINS` and the browser is silently
+dropping every request. It also echoes back the database, upload dir and public base URLs, so one
+page tells you which box you forgot to tick.
+
+---
+
+## Share links
+
+A share link is `https://your-site/r/<token>`, and the server resolves the token.
+
+An earlier version had no backend at all, so the route was packed into the URL fragment as base64url
+and travelled inside the link. That worked, but it capped the URL length and — because a Blob is far
+too large for a URL — **the photos could not travel at all**. A shared link showed the steps, the
+map and the instructions on the recipient's phone, and no pictures.
+
+With a server that is gone. The same link now renders identically on any device, photos included.
+`POST /api/routes/{id}/share/rotate` issues a new token and kills the old link, which is the
+correct behaviour for a URL that may have been pasted into a chat you cannot recall.
+
+The QR code is still drawn in the browser (`lib/useQrDataUrl.ts`) from the same short link, so it
+now works as a real poster code on a stranger's phone.
 
 ---
 
@@ -114,73 +213,42 @@ Mapped against the PRD's MVP feature list (section 7):
 
 | PRD feature | Where it lives |
 | --- | --- |
+| Accounts | `POST /api/auth/register|login`, `pages/Login.tsx` |
 | Map destination | `pages/NewRoute.tsx` — tap the map to drop the destination pin |
 | Visual route builder | `pages/RouteBuilder.tsx` — place on map, then describe; reorder freely |
-| Landmark photos | Pick a photo in the creation card or the landmark editor; JPEG/PNG/WebP/GIF up to 8 MB, stored as a Blob in IndexedDB |
+| Landmark photos | JPEG/PNG/WebP/GIF up to 8 MB, validated in the browser and again on upload |
 | Short instructions | `action` enum + free-text instruction, with templates per action |
-| Shareable route | Payload in the URL fragment → `/r/{token}#d=…` (`lib/share.ts`) |
+| Shareable route | `POST /api/routes/{id}/share/rotate` → `/r/{token}` |
 | QR code | Drawn in the browser (`lib/useQrDataUrl.ts`), plus WhatsApp / SMS / native share |
 | Mobile route viewer | `pages/PublicRoute.tsx` — map + step cards + progress |
 | Landmark verification | `last_verified` / `next_verification` on every landmark |
-| Six-month refresh | `lib/store.ts` freshness helpers + the `/verification` re-check worklist |
-| Community landmarks | `pages/Contribute.tsx` + `pages/CommunityLandmarks.tsx` — contribute once, reuse anywhere |
+| Six-month refresh | `services/freshness.py` + the `/verification` re-check worklist |
+| Community landmarks | `pages/Contribute.tsx` + `pages/CommunityLandmarks.tsx` |
 
 Deliberately out of scope, per PRD section 14: no turn-by-turn GPS engine, no AI landmark
 recognition, no social/review layer.
 
 ---
 
-## Architecture
-
-```
-frontend/
-  src/api/            the data API, served by the browser, plus the response types
-  src/lib/idb.ts      a small promise wrapper over IndexedDB
-  src/lib/store.ts    the data layer: records, serialisers, CRUD, freshness, seeding
-  src/lib/share.ts    packing a route into a link, and unpacking it
-  src/components/map/ Leaflet wrappers (picker + read-only route map)
-  src/context/        the session context (one account, no sign-in)
-  src/pages/          landing, dashboard, builder, share, re-checks, viewer
-```
-
-Choices worth knowing about:
-
-- **Maps: Leaflet + OpenStreetMap.** No API key, no billing, no quota. The PRD asks for "an existing
-  mapping/navigation API rather than building a navigation engine" — OSM tiles satisfy that. Swapping
-  in Google Maps means replacing `components/map/*` only.
-- **IndexedDB, not localStorage.** Landmark photos are stored as Blobs, and localStorage caps out
-  around 5 MB of strings. IndexedDB stores Blobs natively and has room to grow, which is the
-  difference between photo upload working and throwing `QuotaExceededError`.
-- **The whole dataset is read once and held in memory.** Every screen then renders synchronously, with
-  no loading spinners. Judges click fast, and a flash of "Loading…" on every navigation reads as
-  broken. Writes go to IndexedDB and update the in-memory copy.
-- **Photos are references, not URLs.** A stored photo is `photo:<id>`; `lib/usePhotoSrc.ts` resolves
-  it to an object URL and revokes it on unmount, so browsing a gallery does not pin every image in
-  memory for the life of the tab.
-- **The data API keeps its old shape.** `src/api/client.ts` still exposes `api.listRoutes()`,
-  `api.uploadPhoto()` and the rest with the signatures they had when FastAPI served them, so the pages
-  did not have to change. Only the implementation moved.
-
 ### Adding a landmark
 
 Two deliberate steps, because knowing *where* something is makes it much easier to describe:
 
 1. **Place it on the map.** Tap the spot, or drag the amber `+` pin to adjust. The picker draws the
-   destination and the landmarks already on the route as context, so the new pin lands in relation to
-   them. PRD §9 lists the map position as *optional*, so there is a "skip" escape hatch for landmarks
-   with no distinct spot (e.g. "the destination is opposite the black gate").
-2. **Describe it.** A photo, a name, and a short instruction. The form is a disabled `<fieldset>` until
-   step 1 is done, which makes the required order self-evident instead of relying on copy alone.
+   destination and the landmarks already on the route as context, so the new pin lands in relation
+   to them. PRD §9 lists the map position as *optional*, so there is a "skip" escape hatch for
+   landmarks with no distinct spot (e.g. "the destination is opposite the black gate").
+2. **Describe it.** A photo, a name, and a short instruction. The form is a disabled `<fieldset>`
+   until step 1 is done, which makes the required order self-evident instead of relying on copy
+   alone.
 
-Landmarks can be added **in any order**. New ones append to the end, and every row carries ↑/↓ controls
-so the visiting order can be arranged afterwards. Landmarks that already have a photo show a
-thumbnail in the list, so the creator can see at a glance which ones still need one. Type and size are
-validated in the browser first (`lib/upload.ts`) so a bad file never reaches storage.
+Landmarks can be added **in any order**. New ones append to the end, and every row carries ↑/↓
+controls so the visiting order can be arranged afterwards. Reordering is one `PUT` of the whole
+sequence rather than a request per row, and the server rejects a partial list.
 
 ### Community landmarks
 
-Anyone can contribute a landmark to a shared library, and anyone can use it in their own routes. The
-two-step flow is the same as the builder: place the pin, then add a photo and a name.
+Anyone can contribute a landmark to a shared library, and anyone can use it in their own routes.
 
 The six-month window stays with the **contributor**:
 
@@ -192,9 +260,9 @@ The six-month window stays with the **contributor**:
 | "this is outdated" | anyone but the contributor, once | Sets `is_disputed`, increments `report_count` |
 | use in a route | anyone | Adds a step, increments `times_used` |
 
-**A reused step is a view, not a copy.** When a route step carries a `public_landmark_id`,
-`landmarkOut()` reads its photo, coordinates and verification dates from the community landmark. So
-one neighbour re-photographing a gate updates it in every route that uses it — and no recipient can
+**A reused step is a view, not a copy.** `landmark_out()` in `app/serializers.py` reads a step's
+photo, coordinates and verification dates from the community landmark it points at. So one
+neighbour re-photographing a gate updates it in every route that uses it — and no recipient can
 ever be shown an outdated photo. The route keeps ownership of what is genuinely route-specific: the
 `action`, the `instruction` wording, and the ordering.
 
@@ -203,16 +271,39 @@ current photo or report them.
 
 ### The freshness system (PRD section 10)
 
-This is the part that keeps the product honest, so it is worth spelling out:
+This is the part that keeps the product honest:
 
 - A new landmark is verified on creation; `next_verification = created + 180 days`.
-- Editing a landmark's **name, photo, description, or instruction** restarts the clock — because you
-  only just looked at it.
+- Editing a landmark's **name, photo, description, or instruction** restarts the clock — because
+  you only just looked at it.
 - Uploading a new photo also restarts the clock.
 - `/verification` lists landmarks overdue or due within 30 days, soonest first, and offers a
   "still looks the same" button that records the check-in.
 - The public viewer shows a `May have changed` badge on stale landmarks rather than hiding them — a
   person walking is better served by a warning than by confident wrong directions.
+
+---
+
+## Tests
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m pytest              # 52 tests
+.\.venv\Scripts\python.exe smoke_test.py          # 50 checks against a running API
+.\.venv\Scripts\python.exe ..\scripts\verify_cold_start.py   # 20 checks, split-deploy simulation
+```
+
+`pytest` covers the API against an isolated database. `smoke_test.py` drives a **running** server
+through the exact call sequence `src/api/client.ts` makes — including the multipart upload and the
+anonymous public view — and asserts the behaviour that is easy to break silently, such as a
+reordered list actually taking effect and a rotated token killing the old link.
+
+`verify_cold_start.py` simulates the nastiest deploy case: a cold instance, an empty database, no
+lifespan event (Render and Vercel both skip it), and a frontend on a completely different origin.
+That is where CORS and photo-URL resolution break.
+
+The frontend has no test runner. `npm run build` typechecks the whole app, and `npm run lint` is
+clean.
 
 ---
 
@@ -228,35 +319,28 @@ browser-tab icon and is also yours to replace.
 
 ---
 
-## The `backend/` directory
+## Before you demo
 
-`backend/` holds the FastAPI + SQLite implementation this app was first built against. **It is not
-used, not built, and not deployed** — the frontend makes no network requests at all. It is kept only
-as the reference for the data model, the freshness rules, and the request/response shapes in
-`src/api/types.ts`, which still mirror `backend/app/schemas.py`.
-
-If you ever want a real multi-user backend back, that directory plus its 52 passing tests
-(`cd backend && .\.venv\Scripts\python.exe -m pytest`) is the starting point, and the client is shaped
-so it could be swapped back in without touching the pages.
+- [ ] Open the deployed URL in a **private window** and confirm you land on the sign-in page with
+      no session, then that the demo button gets you in.
+- [ ] Paste a share link into a chat and open it **on your phone**. Confirm the photos load — this
+      is the thing that only became possible once there was a backend.
+- [ ] Check a photo upload works on the demo machine's browser.
+- [ ] Confirm `JWT_SECRET` is set and `DEMO_AUTO_LOGIN` matches what you want.
 
 ---
 
-## If this ever needs to be more than a demo
+## Known limits
 
-In rough order of how much they matter:
+Stated plainly rather than discovered later:
 
-- [ ] **Move data off the browser.** Everything above assumes one person, one browser. Multi-user
-      needs a server, and `src/api/client.ts` is the only module that would change.
-- [ ] **Store photos in object storage** (S3/R2) rather than IndexedDB, which is per-browser and
-      bounded by the user's disk quota.
-- [ ] **Add real auth.** There is none, so anyone with the URL can edit everything.
-- [ ] **Server-generated share tokens.** The current link carries its own payload, which is
-      tamperable by design: a recipient can edit what they are shown. That is acceptable for a demo
-      and wrong for directions someone relies on.
-
-## Next steps from the PRD's future scope
-
-The cheapest high-value additions, in order: landmark reliability scores from recipient feedback
-(the recipient view already tracks which steps matched), a nudge to contributors before their window
-expires (the logic exists in `lib/store.ts`, it just needs a scheduler), and camera/AR guidance
-toward the next landmark.
+- **Photo storage is a local directory.** Fine for one instance; it does not survive a redeploy on
+  most PaaS filesystems and does not work across replicas. `services/storage.py` is the only thing
+  to change for S3/R2.
+- **SQLite by default.** One writer, one machine. `DATABASE_URL` takes PostgreSQL.
+- **No refresh tokens.** The access token lives in `localStorage` and lasts 7 days. Signing out
+  clears it, but an XSS bug would be a full account compromise. A cookie-based session with CSRF
+  protection is the fix if this goes near real users.
+- **PBKDF2, not argon2.** Fine, and dependency-free. Not the modern recommendation.
+- **The JS bundle is ~507 kB** (160 kB gzipped), most of it Leaflet and the QR encoder. It is one
+  chunk because nothing is lazy-loaded; route-splitting would cut the landing page considerably.

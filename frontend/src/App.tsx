@@ -6,6 +6,7 @@ import CommunityLandmarks from './pages/CommunityLandmarks'
 import Contribute from './pages/Contribute'
 import Dashboard from './pages/Dashboard'
 import Landing from './pages/Landing'
+import Login from './pages/Login'
 import NewRoute from './pages/NewRoute'
 import PublicRoute from './pages/PublicRoute'
 import RouteBuilder from './pages/RouteBuilder'
@@ -20,6 +21,9 @@ export default function App() {
 
         {/* Public recipient view. */}
         <Route path="/r/:token" element={<PublicRoute />} />
+
+        {/* Only reachable when signed out; redirects home if a session exists. */}
+        <Route path="/login" element={<Login />} />
 
         <Route
           path="/dashboard"

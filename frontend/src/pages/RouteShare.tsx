@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { ApiError, api } from '../api/client'
@@ -7,7 +7,6 @@ import { LandmarkPhoto } from '../components/imgUrl'
 import QrImage, { QrDownload } from '../components/QrImage'
 import { Alert, Spinner } from '../components/ui'
 import { formatDate } from '../lib/format'
-import { buildShareLink } from '../lib/share'
 
 export default function RouteShare() {
   const { routeId } = useParams()
@@ -28,15 +27,11 @@ export default function RouteShare() {
   }, [id])
 
   /**
-   * The link recipients get carries the route in its own fragment, because
-   * there is no server to look a token up on. The QR code cannot carry a
-   * payload that size, so it encodes the short link and only opens on a device
-   * that already has the route.
+   * The link is just `/r/<token>` now. The server resolves the token, so the
+   * same link works on any device — and unlike the old fragment-payload trick,
+   * the photos travel with it.
    */
-  const shareLink = useMemo(
-    () => (route ? buildShareLink(route.share_token, route) : ''),
-    [route],
-  )
+  const shareLink = route?.share_url ?? ''
 
   async function onCopy() {
     if (!shareLink) return
@@ -113,8 +108,8 @@ export default function RouteShare() {
             </button>
           </div>
           <p className="muted small">
-            The whole route travels inside this link, so it opens on any device — no account,
-            no install. Photos stay on the device that took them.
+            Opens in any browser — no account, no install. The photos are included, so it
+            shows the same thing on your phone as it does on yours.
           </p>
 
           <div className="share__buttons">
@@ -131,13 +126,12 @@ export default function RouteShare() {
 
           <h2>Or let them scan</h2>
           <div className="share__qr">
-            <QrImage text={route.share_url} alt={`QR code for ${route.title}`} />
+            <QrImage text={shareLink} alt={`QR code for ${route.title}`} />
             <p className="muted">
-              Prints as a short code. A QR code cannot hold the route itself, so this one
-              opens on a device that already has WayPoint data — send the link above for
-              anything else.
+              Prints as a short code. Good for a poster or a notice board — it opens the
+              same route on any phone.
             </p>
-            <QrDownload text={route.share_url} name={`${route.title} QR`} />
+            <QrDownload text={shareLink} name={`${route.title} QR`} />
           </div>
 
           <footer className="share__foot">

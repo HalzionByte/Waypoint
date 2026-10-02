@@ -1,5 +1,3 @@
-import { usePhotoSrc } from '../lib/usePhotoSrc'
-
 interface PhotoProps {
   photoUrl: string | null | undefined
   alt: string
@@ -12,8 +10,10 @@ interface PhotoProps {
 /**
  * A landmark photo, or a placeholder.
  *
- * Use this anywhere a photo is rendered, so no caller has to remember that a
- * saved photo is an IndexedDB reference rather than a URL.
+ * The API returns a plain URL (`/uploads/…`, made absolute by `PUBLIC_API_BASE`
+ * when the site and the API are on different origins), so there is nothing to
+ * resolve here. Callers that are previewing a not-yet-uploaded file pass a local
+ * object URL, which an <img> loads just as happily.
  */
 export function LandmarkPhoto({
   photoUrl,
@@ -22,13 +22,11 @@ export function LandmarkPhoto({
   placeholder = 'No photo for this landmark',
   placeholderClassName = 'photo-placeholder--flat',
 }: PhotoProps) {
-  const src = usePhotoSrc(photoUrl)
-
-  if (!src) {
+  if (!photoUrl) {
     if (!placeholder) return null
     return <div className={`photo-placeholder ${placeholderClassName}`}>{placeholder}</div>
   }
-  return <img className={className} src={src} alt={alt} loading="lazy" />
+  return <img className={className} src={photoUrl} alt={alt} loading="lazy" />
 }
 
 export default LandmarkPhoto

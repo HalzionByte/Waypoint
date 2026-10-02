@@ -82,7 +82,7 @@ export default function Landing() {
         </p>
         <div className="hero__actions">
           <Link to="/dashboard" className="btn btn--lg">
-            Open the demo
+            Start building a route
           </Link>
           <Link to="/landmarks" className="btn btn--ghost btn--lg">
             Browse community landmarks

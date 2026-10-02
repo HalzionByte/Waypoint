@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-_TMP = Path(os.environ.get("SIM_STORAGE") or (tempfile.gettempdir() / "wp-coldstart"))
+_TMP = Path(os.environ.get("SIM_STORAGE") or tempfile.gettempdir()) / "wp-coldstart"
 _TMP.mkdir(parents=True, exist_ok=True)
 
 FRONTEND = "https://waypoint-demo.vercel.app"

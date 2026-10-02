@@ -1,35 +1,17 @@
-import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 import Logo from './Logo'
 import { useAuth } from '../context/useAuth'
-import { resetAll } from '../lib/store'
 
 export default function Layout() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [resetting, setResetting] = useState(false)
 
-  /**
-   * Everything lives in this browser now, so a demo that has been clicked
-   * through is one reload away from being a demo again. This is the fastest
-   * way back to a clean state between runs.
-   */
-  async function onReset() {
-    if (
-      !window.confirm(
-        'Delete everything stored in this browser and restore the sample routes?\n\nThis cannot be undone.',
-      )
-    ) {
-      return
-    }
-    setResetting(true)
-    try {
-      await resetAll()
-      navigate('/dashboard')
-    } finally {
-      setResetting(false)
-    }
+  function onSignOut() {
+    logout()
+    // Everything behind ProtectedRoute needs an account, so landing on the
+    // signed-out landing page is the only honest place to be.
+    navigate('/')
   }
 
   return (
@@ -53,7 +35,19 @@ export default function Layout() {
           <Link to="/contribute" className="btn btn--sm nav__cta">
             Contribute
           </Link>
-          {user && <span className="nav__user">{user.name}</span>}
+
+          {user ? (
+            <>
+              <span className="nav__user">{user.name}</span>
+              <button className="linkish" onClick={onSignOut}>
+                Sign out
+              </button>
+            </>
+          ) : (
+            <Link to="/login" className="btn btn--sm nav__cta">
+              Sign in
+            </Link>
+          )}
         </nav>
       </header>
 
@@ -64,11 +58,8 @@ export default function Layout() {
       <footer className="footer">
         <p>Maps get you to the area. WayPoint gets you to the door.</p>
         <p className="muted small">
-          Everything here is stored in this browser only — no account, no server. Reloading
-          keeps your work.{' '}
-          <button className="linkish" disabled={resetting} onClick={() => void onReset()}>
-            {resetting ? 'Restoring…' : 'Reset to the sample data'}
-          </button>
+          Your routes and photos are saved to your account, so they follow you across
+          devices. Anyone with a shared link can open that route without an account.
         </p>
       </footer>
     </div>
